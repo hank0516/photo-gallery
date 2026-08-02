@@ -21,7 +21,7 @@
         <div class="lb-img-wrap" @click.self="$emit('close')">
           <img
             v-if="current"
-            :src="current.thumb_800_url"
+            :src="displayUrl"
             :alt="current.caption || current.filename"
             class="lb-img"
             :class="{ loading: imgLoading }"
@@ -85,6 +85,23 @@ const showInfo = ref(false)
 const boxEl = ref(null)
 
 const current = computed(() => props.photos[currentIndex.value] ?? null)
+const displayUrl = ref('')
+
+// Show thumb immediately, then upgrade to original in background
+watch(current, async (photo) => {
+  if (!photo) { displayUrl.value = ''; return }
+  displayUrl.value = photo.thumb_800_url
+  try {
+    const { data } = await api.get(`/photos/${photo.id}`)
+    const origUrl = data.original_url
+    await new Promise((resolve) => {
+      const img = new Image()
+      img.onload = img.onerror = resolve
+      img.src = origUrl
+    })
+    if (current.value?.id === photo.id) displayUrl.value = origUrl
+  } catch { /* keep thumb_800 */ }
+}, { immediate: true })
 
 watch(() => props.startIndex, v => { currentIndex.value = v })
 watch(() => props.visible, v => {
