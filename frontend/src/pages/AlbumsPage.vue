@@ -15,6 +15,19 @@
         <button v-if="authStore.isAdmin" class="btn-primary" @click="showCreate = true">
           + 新增相簿
         </button>
+        <RouterLink v-if="authStore.isAdmin" class="btn-icon" to="/admin" title="管理後台">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="8" r="4" />
+            <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
+            <circle cx="19" cy="8" r="2" />
+            <line x1="19" y1="2" x2="19" y2="4" />
+            <line x1="19" y1="12" x2="19" y2="14" />
+            <line x1="15.5" y1="3.5" x2="17" y2="5" />
+            <line x1="21" y1="11" x2="22.5" y2="12.5" />
+            <line x1="22.5" y1="3.5" x2="21" y2="5" />
+            <line x1="17" y1="11" x2="15.5" y2="12.5" />
+          </svg>
+        </RouterLink>
         <button class="btn-icon" title="登出" @click="authStore.logout()">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />

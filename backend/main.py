@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 from app.core.config import settings
 
-from app.api import auth, albums, photos, users, share, search, storage_info
+from app.api import admin, auth, albums, photos, users, share, search, storage_info
 from app.middleware import RequestLoggingMiddleware
 
 app = FastAPI(
@@ -22,6 +22,7 @@ app.add_middleware(
 )
 app.add_middleware(RequestLoggingMiddleware)
 
+app.include_router(admin.router, prefix="/api/photo-gallery")
 app.include_router(auth.router, prefix="/api/photo-gallery")
 app.include_router(albums.router, prefix="/api/photo-gallery")
 app.include_router(photos.router, prefix="/api/photo-gallery")
