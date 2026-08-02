@@ -21,6 +21,7 @@
 | Phase 10: US8 Download | 單張下載（✅）、相簿 ZIP（⬜）| 🔶 部分完成 |
 | Phase 11: US9 Search | 搜尋與篩選 | ✅ 完成 |
 | Phase 12: Polish | systemd、Apache、RWD | ✅ 完成 |
+| Phase 14: Audit Log | login_logs + request_logs table、middleware、spec 更新 | ✅ 完成 |
 
 ---
 

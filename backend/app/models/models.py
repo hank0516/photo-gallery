@@ -117,3 +117,43 @@ class ShareLink(Base):
         Index("idx_share_token", "token"),
         Index("idx_share_album", "album_id"),
     )
+
+
+class LoginLog(Base):
+    __tablename__ = "login_logs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    email = Column(String(255), nullable=False)
+    ip_address = Column(String(64), nullable=True)
+    user_agent = Column(Text, nullable=True)
+    logged_in_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    user = relationship("User")
+
+    __table_args__ = (
+        Index("idx_login_logs_user_id", "user_id"),
+        Index("idx_login_logs_logged_in_at", "logged_in_at"),
+    )
+
+
+class RequestLog(Base):
+    __tablename__ = "request_logs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    email = Column(String(255), nullable=True)
+    method = Column(String(10), nullable=False)
+    path = Column(String(512), nullable=False)
+    status_code = Column(Integer, nullable=False)
+    response_time_ms = Column(Integer, nullable=True)
+    ip_address = Column(String(64), nullable=True)
+    requested_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    user = relationship("User")
+
+    __table_args__ = (
+        Index("idx_request_logs_user_id", "user_id"),
+        Index("idx_request_logs_requested_at", "requested_at"),
+        Index("idx_request_logs_path", "path"),
+    )

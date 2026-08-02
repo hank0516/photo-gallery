@@ -235,6 +235,34 @@ search returns the correct results.
 
 ---
 
+### User Story 10 — Activity Audit Log (Priority: P10)
+
+The system silently records every Google login and every API request to the database. Records
+include timestamp, email, API path, HTTP method, status code, response time, and client IP.
+This allows the admin to review access history and diagnose issues without relying solely on
+server logs.
+
+**Why this priority**: Operational visibility and security auditing; useful for understanding
+usage patterns and detecting unauthorized access attempts.
+
+**Independent Test**: Log in with a test account, make several API calls, then query the
+`login_logs` and `request_logs` tables directly to verify records are present and fields are
+populated correctly.
+
+**Acceptance Scenarios**:
+
+1. **Given** a user completes Google OAuth, **When** the callback succeeds, **Then** a record is
+   inserted in `login_logs` with the user's email, user_id, IP address, user agent, and timestamp.
+2. **Given** any API request is made, **When** it completes, **Then** a record is inserted in
+   `request_logs` with method, path, status code, response time, IP, and (if authenticated)
+   the user's email and user_id.
+3. **Given** an unauthenticated request, **When** it is logged, **Then** `user_id` and `email`
+   are NULL but all other fields are populated.
+4. **Given** a logging error occurs, **When** the record cannot be written, **Then** the original
+   API response is still returned to the client (logging must not affect normal operation).
+
+---
+
 ### Edge Cases
 
 - What happens when a user tries to upload a non-image file (e.g., PDF, video)?
@@ -308,6 +336,11 @@ search returns the correct results.
 - **FR-035**: The system MUST display a storage usage summary (total used, per album) visible to admins.
 - **FR-036**: All photo grid views MUST use lazy loading so that only visible thumbnails are requested.
 
+**Audit Logging**
+- **FR-039**: The system MUST record every successful Google OAuth login in a `login_logs` table, including: user_id, email, IP address, user agent, and timestamp.
+- **FR-040**: The system MUST record every API request in a `request_logs` table, including: user_id (nullable), email (nullable), HTTP method, path, status code, response time (ms), IP address, and timestamp.
+- **FR-041**: Logging failures MUST NOT affect the response returned to the client.
+
 ---
 
 ### Key Entities
@@ -326,6 +359,12 @@ search returns the correct results.
 
 - **ShareLink**: A time-limited token granting read-only access to a specific album without login.
   Has an expiry date and a revoked flag.
+
+- **LoginLog**: A record of a completed Google OAuth login. Has user_id (FK), email, IP address,
+  user agent, and timestamp.
+
+- **RequestLog**: A record of a single API request. Has user_id (nullable FK), email (nullable),
+  HTTP method, path, status code, response time in ms, IP address, and timestamp.
 
 ---
 

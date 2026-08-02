@@ -9,7 +9,7 @@ from starlette.requests import Request
 from app.core.auth import create_access_token, get_current_user
 from app.core.config import settings
 from app.core.database import get_db
-from app.models.models import User
+from app.models.models import LoginLog, User
 
 router = APIRouter(tags=["auth"])
 
@@ -48,6 +48,13 @@ async def callback(request: Request, db: Session = Depends(get_db)):
         )
         db.add(user)
 
+    db.add(LoginLog(
+        user_id=user.id,
+        email=user.email,
+        ip_address=(request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
+                    or (request.client.host if request.client else None)),
+        user_agent=request.headers.get("User-Agent"),
+    ))
     db.commit()
     db.refresh(user)
 

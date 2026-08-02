@@ -4,6 +4,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from app.core.config import settings
 
 from app.api import auth, albums, photos, users, share, search, storage_info
+from app.middleware import RequestLoggingMiddleware
 
 app = FastAPI(
     title="Photo Gallery API",
@@ -19,6 +20,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(RequestLoggingMiddleware)
 
 app.include_router(auth.router, prefix="/api/photo-gallery")
 app.include_router(albums.router, prefix="/api/photo-gallery")
