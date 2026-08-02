@@ -1,0 +1,15 @@
+[Unit]
+Description=Photo Gallery FastAPI
+After=network.target mariadb.service
+
+[Service]
+Type=simple
+User=hank
+WorkingDirectory=/home/hank/my_websites/photo-gallery/backend
+ExecStart=/home/hank/my_websites/photo-gallery/backend/venv_photo_galary/bin/uvicorn main:app --host 127.0.0.1 --port 8002
+Restart=on-failure
+RestartSec=5
+EnvironmentFile=/home/hank/my_websites/photo-gallery/backend/.env
+
+[Install]
+WantedBy=multi-user.target

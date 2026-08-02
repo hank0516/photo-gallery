@@ -1,0 +1,19 @@
+# Python
+backend/venv_photo_galary/
+backend/__pycache__/
+backend/**/__pycache__/
+backend/**/*.pyc
+backend/alembic/versions/
+
+# Environment
+**/.env
+**/.env.*
+!**/.env.example
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+
+# OS
+.DS_Store
+Thumbs.db
