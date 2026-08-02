@@ -10,6 +10,12 @@
         </svg>
       </div>
       <span class="role-badge" :class="album.my_role">{{ album.my_role }}</span>
+      <span v-if="album.is_locked" class="lock-badge" title="上鎖相簿">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
+          <rect x="3" y="11" width="18" height="11" rx="2" />
+          <path d="M7 11V7a5 5 0 0 1 10 0v4" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
+        </svg>
+      </span>
     </div>
     <div class="info">
       <h3>{{ album.name }}</h3>
@@ -75,6 +81,19 @@ function formatDate(d) {
 .role-badge.admin { background: #5c6bc0; color: #fff; }
 .role-badge.uploader { background: #388e3c; color: #fff; }
 .role-badge.viewer { background: #455a64; color: #fff; }
+.lock-badge {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  background: rgba(0,0,0,0.6);
+  color: #ffcc80;
+  border-radius: 50%;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
 .info {
   padding: 12px;
 }

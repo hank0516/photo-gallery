@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from typing import Optional
@@ -7,6 +7,7 @@ from datetime import date
 
 from app.core.auth import get_current_user, require_admin
 from app.core.database import get_db
+from app.core.security import create_unlock_token, decode_unlock_token, hash_password, verify_password
 from app.core.storage import generate_presigned_url
 from app.models.models import Album, Photo, Permission, User
 
@@ -58,6 +59,7 @@ def _album_response(album: Album, role: str, db: Session) -> dict:
         "cover_thumb_url": cover_url,
         "photo_count": photo_count,
         "my_role": role,
+        "is_locked": album.is_locked,
         "created_at": album.created_at.isoformat(),
     }
 
@@ -99,11 +101,18 @@ def create_album(
     if album_date is None:
         album_date = _parse_date_from_title(name)
 
+    is_locked = bool(body.get("is_locked", False))
+    password_raw = body.get("password", "")
+    if is_locked and not password_raw:
+        raise HTTPException(status_code=400, detail="上鎖的相簿必須設定密碼")
+
     album = Album(
         name=name,
         description=body.get("description"),
         album_date=album_date,
         created_by=current_user.id,
+        is_locked=is_locked,
+        password_hash=hash_password(password_raw) if is_locked else None,
     )
     db.add(album)
     db.commit()
@@ -118,6 +127,7 @@ def get_album(
     per_page: int = 50,
     sort: str = "uploaded_at",
     order: str = "desc",
+    unlock_token: Optional[str] = Query(default=None),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -128,6 +138,13 @@ def get_album(
     role = _get_user_role(db, current_user, album_id)
     if not role:
         raise HTTPException(status_code=403, detail="Access denied")
+
+    if album.is_locked:
+        if not unlock_token:
+            return {"album": _album_response(album, role, db), "locked": True, "photos": [], "total": 0, "page": page, "per_page": per_page}
+        payload = decode_unlock_token(unlock_token)
+        if not payload or payload.get("album_id") != album_id or payload.get("user_id") != current_user.id:
+            return {"album": _album_response(album, role, db), "locked": True, "photos": [], "total": 0, "page": page, "per_page": per_page}
 
     sort_col = Photo.uploaded_at if sort == "uploaded_at" else Photo.exif_date_taken
     query = db.query(Photo).filter(Photo.album_id == album_id, Photo.is_deleted == False)
@@ -184,6 +201,13 @@ def update_album(
             album.album_date = date.fromisoformat(body["album_date"]) if body["album_date"] else None
         except ValueError:
             pass
+    if "is_locked" in body:
+        album.is_locked = bool(body["is_locked"])
+        if not album.is_locked:
+            album.password_hash = None
+    if "password" in body and body["password"]:
+        album.password_hash = hash_password(body["password"])
+        album.is_locked = True
 
     db.commit()
     db.refresh(album)
@@ -207,6 +231,30 @@ def delete_album(
     db.query(Photo).filter(Photo.album_id == album_id).update({"is_deleted": True})
     album.is_deleted = True
     db.commit()
+
+
+@router.post("/albums/{album_id}/unlock")
+def unlock_album(
+    album_id: int,
+    body: dict,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    album = db.query(Album).filter(Album.id == album_id, Album.is_deleted == False).first()
+    if not album:
+        raise HTTPException(status_code=404, detail="Album not found")
+
+    role = _get_user_role(db, current_user, album_id)
+    if not role:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    if not album.is_locked:
+        raise HTTPException(status_code=400, detail="Album is not locked")
+
+    if not verify_password(body.get("password", ""), album.password_hash or ""):
+        raise HTTPException(status_code=401, detail="密碼錯誤")
+
+    return {"unlock_token": create_unlock_token(album_id, current_user.id)}
 
 
 @router.get("/albums/{album_id}/permissions")

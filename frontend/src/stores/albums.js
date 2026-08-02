@@ -20,8 +20,10 @@ export const useAlbumsStore = defineStore('albums', () => {
     }
   }
 
-  async function createAlbum(name, description, album_date) {
-    const { data } = await api.post('/albums', { name, description, album_date })
+  async function createAlbum(name, description, album_date, password = null) {
+    const body = { name, description, album_date }
+    if (password) { body.is_locked = true; body.password = password }
+    const { data } = await api.post('/albums', body)
     albums.value.unshift(data)
     return data
   }

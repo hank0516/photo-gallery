@@ -42,6 +42,9 @@ class Album(Base):
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
     is_deleted = Column(Boolean, nullable=False, default=False)
 
+    is_locked = Column(Boolean, nullable=False, default=False, server_default='0')
+    password_hash = Column(String(255), nullable=True)
+
     creator = relationship("User", back_populates="albums_created")
     photos = relationship("Photo", foreign_keys="Photo.album_id", back_populates="album")
     permissions = relationship("Permission", back_populates="album")

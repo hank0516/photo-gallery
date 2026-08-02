@@ -6,6 +6,18 @@
         <button class="btn-icon" :title="sortDesc ? '降冪（最新優先）' : '升冪（最舊優先）'" @click="toggleSort">
           {{ sortDesc ? '↓' : '↑' }}
         </button>
+        <button
+          v-if="hasLockedAlbums"
+          class="btn-icon"
+          :class="{ active: showLocked }"
+          :title="showLocked ? '隱藏上鎖相簿' : '顯示上鎖相簿'"
+          @click="showLocked = !showLocked"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+            <rect x="3" y="11" width="18" height="11" rx="2" />
+            <path d="M7 11V7a5 5 0 0 1 10 0v4" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
+          </svg>
+        </button>
         <button class="btn-icon" title="搜尋" @click="$router.push('/search')">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="11" cy="11" r="8" />
@@ -67,9 +79,19 @@
         />
         <label>描述</label>
         <input v-model="newDesc" placeholder="選填" maxlength="500" />
+        <div class="lock-row">
+          <label class="lock-label">
+            <input type="checkbox" v-model="newLocked" />
+            上鎖此相簿（需輸入密碼才能瀏覽）
+          </label>
+        </div>
+        <template v-if="newLocked">
+          <label>相簿密碼 <span class="required">*</span></label>
+          <input v-model="newPassword" type="password" placeholder="設定密碼" autocomplete="new-password" />
+        </template>
         <div class="modal-actions">
           <button class="btn-secondary" @click="cancelCreate">取消</button>
-          <button class="btn-primary" :disabled="!newName.trim() || creating" @click="handleCreate">
+          <button class="btn-primary" :disabled="!newName.trim() || (newLocked && !newPassword) || creating" @click="handleCreate">
             {{ creating ? '建立中…' : '建立' }}
           </button>
         </div>
@@ -91,10 +113,15 @@ const showCreate = ref(false)
 const newName = ref('')
 const newDesc = ref('')
 const newDate = ref('')
+const newLocked = ref(false)
+const newPassword = ref('')
 const dateAutoFilled = ref(false)
 const creating = ref(false)
 
 const sortDesc = ref(localStorage.getItem('pg_album_sort') !== 'asc')
+const showLocked = ref(false)
+
+const hasLockedAlbums = computed(() => albumsStore.albums.some(a => a.is_locked))
 
 const DATE_RE = /(\d{4})[.\-](\d{2})[.\-](\d{2})/
 
@@ -125,7 +152,7 @@ function toggleSort() {
 }
 
 const groupedAlbums = computed(() => {
-  const albums = [...albumsStore.albums]
+  const albums = albumsStore.albums.filter(a => showLocked.value || !a.is_locked)
   const dated = albums.filter(a => a.album_date)
   const undated = albums.filter(a => !a.album_date)
 
@@ -156,14 +183,22 @@ function cancelCreate() {
   newName.value = ''
   newDesc.value = ''
   newDate.value = ''
+  newLocked.value = false
+  newPassword.value = ''
   dateAutoFilled.value = false
 }
 
 async function handleCreate() {
   if (!newName.value.trim()) return
+  if (newLocked.value && !newPassword.value) return
   creating.value = true
   try {
-    await albumsStore.createAlbum(newName.value.trim(), newDesc.value.trim(), newDate.value || null)
+    await albumsStore.createAlbum(
+      newName.value.trim(),
+      newDesc.value.trim(),
+      newDate.value || null,
+      newLocked.value ? newPassword.value : null,
+    )
     cancelCreate()
   } finally {
     creating.value = false
@@ -229,6 +264,7 @@ onMounted(() => albumsStore.fetchAlbums())
   font-size: 14px;
 }
 .btn-icon:hover { color: #ccc; border-color: #555; }
+.btn-icon.active { color: #ffcc80; border-color: #ffcc80; }
 
 .year-section { margin-bottom: 32px; }
 .year-header {
@@ -303,6 +339,9 @@ onMounted(() => albumsStore.fetchAlbums())
   border-color: #388e3c;
   color: #81c784;
 }
+.lock-row { display: flex; align-items: center; }
+.lock-label { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #ccc; cursor: pointer; }
+.lock-label input[type="checkbox"] { width: 15px; height: 15px; cursor: pointer; }
 .modal-actions {
   display: flex;
   gap: 10px;

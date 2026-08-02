@@ -263,6 +263,40 @@ populated correctly.
 
 ---
 
+### User Story 11 — Locked Albums (Priority: P11)
+
+An admin creates an album and marks it as locked, setting a password at creation time.
+Users with permission to the album can see it in their album list (with a lock icon) but
+must enter the correct password before viewing any photos. The unlock state lasts only for
+the current browser session — closing or refreshing the page requires re-entry.
+
+**Why this priority**: Allows storing sensitive content (e.g., surprise party photos, private
+family moments) within the shared gallery without exposing it to casual browsing.
+
+**Independent Test**: Create a locked album as admin, grant viewer access to a second user,
+log in as that user, confirm the lock gate appears, enter wrong password (expect error),
+enter correct password (expect photos to load), reload the page (expect gate to reappear).
+
+**Acceptance Scenarios**:
+
+1. **Given** an admin creates an album with "上鎖" enabled and a password, **When** the album
+   is saved, **Then** it appears in the album list with a lock icon.
+2. **Given** a permitted user opens a locked album they have not yet unlocked, **When** the
+   page loads, **Then** they see a password entry screen with no photo thumbnails visible.
+3. **Given** the user enters the correct password, **When** they submit, **Then** the album
+   photos are displayed normally.
+4. **Given** the user enters the wrong password, **When** they submit, **Then** an error
+   message is shown and no photos are revealed.
+5. **Given** a user has unlocked an album in the current session, **When** they navigate away
+   and return, **Then** the album remains unlocked (no re-entry required).
+6. **Given** a user refreshes or reopens the browser, **When** they visit the locked album,
+   **Then** the password gate is shown again.
+7. **Given** a user without permissions to the album, **When** they try to access it,
+   **Then** they receive the same "access denied" response as any non-permitted album (the
+   lock gate is not shown — the album is invisible to them).
+
+---
+
 ### Edge Cases
 
 - What happens when a user tries to upload a non-image file (e.g., PDF, video)?
@@ -336,9 +370,16 @@ populated correctly.
 - **FR-035**: The system MUST display a storage usage summary (total used, per album) visible to admins.
 - **FR-036**: All photo grid views MUST use lazy loading so that only visible thumbnails are requested.
 
+**Locked Albums**
+- **FR-042**: Admin users MUST be able to mark an album as locked at creation time, providing a password that is stored as a secure hash (PBKDF2-SHA256).
+- **FR-043**: A locked album MUST appear in the album list for permitted users with a visible lock indicator, but photo contents MUST NOT be returned by the server until a valid unlock token is presented.
+- **FR-044**: The system MUST provide a `POST /albums/{id}/unlock` endpoint that verifies the password and returns a signed, time-limited unlock token (JWT, 24 h expiry).
+- **FR-045**: The unlock token MUST be stored client-side only (Pinia in-memory); it is lost on page reload, requiring re-entry.
+- **FR-046**: Admin users MUST be able to enable, disable, or change the password for a locked album via `PATCH /albums/{id}`.
+
 **Audit Logging**
 - **FR-039**: The system MUST record every successful Google OAuth login in a `login_logs` table, including: user_id, email, IP address, user agent, and timestamp.
-- **FR-040**: The system MUST record every API request in a `request_logs` table, including: user_id (nullable), email (nullable), HTTP method, path, status code, response time (ms), IP address, and timestamp.
+- **FR-040**: The system MUST record every API request in a `request_logs` table, including: user_id (nullable), email (nullable), HTTP method, path (including query string), status code, response time (ms), IP address, and timestamp.
 - **FR-041**: Logging failures MUST NOT affect the response returned to the client.
 
 ---

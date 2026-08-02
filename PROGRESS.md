@@ -22,6 +22,8 @@
 | Phase 11: US9 Search | 搜尋與篩選 | ✅ 完成 |
 | Phase 12: Polish | systemd、Apache、RWD | ✅ 完成 |
 | Phase 14: Audit Log | login_logs + request_logs table、middleware、spec 更新 | ✅ 完成 |
+| Phase 15: Locked Albums | 相簿加密、PBKDF2 hash、unlock JWT token、lock gate UI、spec 更新 | ✅ 完成 |
+| Phase 16: Delete Album UI + Query String Log | 刪除相簿按鈕（AlbumPage admin）、request log 加 query string | ✅ 完成 |
 
 ---
 
