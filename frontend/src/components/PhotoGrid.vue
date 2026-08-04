@@ -8,10 +8,17 @@
         @click="$emit('open', idx)"
       >
         <img
+          v-if="photo.thumb_300_url"
           :src="photo.thumb_300_url"
           :alt="photo.caption || photo.filename"
           loading="lazy"
         />
+        <div v-else class="thumb-placeholder">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor"><path d="M18 4l2 4h-3l-2-4h-2l2 4h-3l-2-4H8l2 4H7L5 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V4h-4z"/></svg>
+        </div>
+        <div v-if="isVideo(photo)" class="play-overlay">
+          <svg width="36" height="36" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+        </div>
         <div class="overlay">
           <span v-if="photo.caption" class="caption">{{ photo.caption }}</span>
         </div>
@@ -25,7 +32,19 @@
         class="list-item"
         @click="$emit('open', idx)"
       >
-        <img :src="photo.thumb_300_url" :alt="photo.filename" loading="lazy" class="list-thumb" />
+        <div class="list-thumb-wrap">
+          <img
+            v-if="photo.thumb_300_url"
+            :src="photo.thumb_300_url"
+            :alt="photo.filename"
+            loading="lazy"
+            class="list-thumb"
+          />
+          <div v-else class="list-thumb thumb-placeholder">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M18 4l2 4h-3l-2-4h-2l2 4h-3l-2-4H8l2 4H7L5 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V4h-4z"/></svg>
+          </div>
+          <div v-if="isVideo(photo)" class="list-play-badge">▶</div>
+        </div>
         <div class="list-info">
           <span class="list-filename">{{ photo.filename }}</span>
           <span v-if="photo.caption" class="list-caption">{{ photo.caption }}</span>
@@ -37,7 +56,7 @@
       </div>
     </template>
 
-    <div v-if="photos.length === 0" class="empty">此相簿還沒有照片</div>
+    <div v-if="photos.length === 0" class="empty">此相簿還沒有照片或影片</div>
   </div>
 </template>
 
@@ -47,6 +66,10 @@ defineProps({
   viewMode: { type: String, default: 'small-grid' },
 })
 defineEmits(['open'])
+
+function isVideo(photo) {
+  return photo.mime_type?.startsWith('video/')
+}
 
 function formatDate(iso) {
   if (!iso) return ''
@@ -83,6 +106,31 @@ function formatDate(iso) {
   transition: transform 0.2s;
 }
 .grid-item:hover img { transform: scale(1.04); }
+
+.thumb-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #1e1e1e;
+  color: #444;
+}
+
+.play-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+.play-overlay svg {
+  filter: drop-shadow(0 2px 6px rgba(0,0,0,0.8));
+  opacity: 0.9;
+  color: #fff;
+}
+
 .overlay {
   position: absolute;
   bottom: 0;
@@ -120,12 +168,34 @@ function formatDate(iso) {
   transition: background 0.1s;
 }
 .list-item:hover { background: #2a2a2a; }
+.list-thumb-wrap {
+  position: relative;
+  flex-shrink: 0;
+  width: 56px;
+  height: 56px;
+}
 .list-thumb {
   width: 56px;
   height: 56px;
   object-fit: cover;
   border-radius: 4px;
-  flex-shrink: 0;
+}
+.list-thumb-wrap .thumb-placeholder {
+  width: 56px;
+  height: 56px;
+  border-radius: 4px;
+  color: #444;
+}
+.list-play-badge {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  color: rgba(255,255,255,0.85);
+  text-shadow: 0 1px 4px rgba(0,0,0,0.8);
+  pointer-events: none;
 }
 .list-info {
   display: flex;

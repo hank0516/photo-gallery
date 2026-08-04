@@ -83,9 +83,10 @@ def search_photos(
         photos.append({
             "id": photo.id,
             "filename": photo.filename,
+            "mime_type": photo.mime_type,
             "caption": photo.caption,
-            "thumb_300_url": generate_presigned_url(photo.thumb_300_key),
-            "thumb_800_url": generate_presigned_url(photo.thumb_800_key),
+            "thumb_300_url": generate_presigned_url(photo.thumb_300_key) if photo.thumb_300_key else None,
+            "thumb_800_url": generate_presigned_url(photo.thumb_800_key) if photo.thumb_800_key else None,
             "exif_date_taken": photo.exif_date_taken.isoformat() if photo.exif_date_taken else None,
             "width": photo.width,
             "height": photo.height,

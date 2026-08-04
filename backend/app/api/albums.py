@@ -157,8 +157,9 @@ def get_album(
     for p in photos:
         photo_list.append({
             "id": p.id,
-            "thumb_300_url": generate_presigned_url(p.thumb_300_key),
-            "thumb_800_url": generate_presigned_url(p.thumb_800_key),
+            "thumb_300_url": generate_presigned_url(p.thumb_300_key) if p.thumb_300_key else None,
+            "thumb_800_url": generate_presigned_url(p.thumb_800_key) if p.thumb_800_key else None,
+            "mime_type": p.mime_type,
             "caption": p.caption,
             "exif_date_taken": p.exif_date_taken.isoformat() if p.exif_date_taken else None,
             "width": p.width,

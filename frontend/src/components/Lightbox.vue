@@ -17,18 +17,31 @@
         <!-- Prev -->
         <button class="lb-nav lb-prev" :disabled="currentIndex === 0" @click="go(-1)">‹</button>
 
-        <!-- Image -->
+        <!-- Media area -->
         <div class="lb-img-wrap" @click.self="$emit('close')">
-          <img
-            v-if="current"
-            :src="displayUrl"
-            :alt="current.caption || current.filename"
-            class="lb-img"
-            :class="{ loading: imgLoading }"
-            @load="imgLoading = false"
-            @loadstart="imgLoading = true"
-          />
-          <div v-if="imgLoading" class="lb-spinner"></div>
+          <template v-if="isVideo">
+            <video
+              ref="videoEl"
+              :src="displayUrl"
+              controls
+              preload="metadata"
+              class="lb-video"
+              :class="{ loading: mediaLoading }"
+              @loadedmetadata="mediaLoading = false"
+            />
+          </template>
+          <template v-else>
+            <img
+              v-if="current"
+              :src="displayUrl"
+              :alt="current.caption || current.filename"
+              class="lb-img"
+              :class="{ loading: mediaLoading }"
+              @load="mediaLoading = false"
+              @loadstart="mediaLoading = true"
+            />
+          </template>
+          <div v-if="mediaLoading" class="lb-spinner"></div>
         </div>
 
         <!-- Next -->
@@ -79,28 +92,46 @@ const props = defineProps({
 const emit = defineEmits(['close', 'update:startIndex', 'deleted'])
 
 const currentIndex = ref(props.startIndex)
-const imgLoading = ref(false)
+const mediaLoading = ref(false)
 const deleting = ref(false)
 const showInfo = ref(false)
 const boxEl = ref(null)
+const videoEl = ref(null)
 
 const current = computed(() => props.photos[currentIndex.value] ?? null)
+const isVideo = computed(() => current.value?.mime_type?.startsWith('video/'))
 const displayUrl = ref('')
 
-// Show thumb immediately, then upgrade to original in background
 watch(current, async (photo) => {
   if (!photo) { displayUrl.value = ''; return }
-  displayUrl.value = photo.thumb_800_url
-  try {
-    const { data } = await api.get(`/photos/${photo.id}`)
-    const origUrl = data.original_url
-    await new Promise((resolve) => {
-      const img = new Image()
-      img.onload = img.onerror = resolve
-      img.src = origUrl
-    })
-    if (current.value?.id === photo.id) displayUrl.value = origUrl
-  } catch { /* keep thumb_800 */ }
+
+  if (isVideo.value) {
+    // For videos: fetch original_url directly (presigned URL for the video file)
+    mediaLoading.value = true
+    displayUrl.value = ''
+    try {
+      const { data } = await api.get(`/photos/${photo.id}`)
+      if (current.value?.id === photo.id) {
+        displayUrl.value = data.original_url
+        mediaLoading.value = false
+      }
+    } catch {
+      mediaLoading.value = false
+    }
+  } else {
+    // For images: show thumb_800 immediately, then upgrade to original
+    displayUrl.value = photo.thumb_800_url || ''
+    try {
+      const { data } = await api.get(`/photos/${photo.id}`)
+      const origUrl = data.original_url
+      await new Promise((resolve) => {
+        const img = new Image()
+        img.onload = img.onerror = resolve
+        img.src = origUrl
+      })
+      if (current.value?.id === photo.id) displayUrl.value = origUrl
+    } catch { /* keep thumb_800 */ }
+  }
 }, { immediate: true })
 
 watch(() => props.startIndex, v => { currentIndex.value = v })
@@ -108,13 +139,16 @@ watch(() => props.visible, v => {
   if (v) {
     showInfo.value = false
     nextTick(() => boxEl.value?.focus())
+  } else {
+    videoEl.value?.pause()
   }
 })
 
 function go(delta) {
   const next = currentIndex.value + delta
   if (next < 0 || next >= props.photos.length) return
-  imgLoading.value = true
+  videoEl.value?.pause()
+  mediaLoading.value = true
   currentIndex.value = next
   emit('update:startIndex', next)
 }
@@ -194,7 +228,7 @@ function formatDate(iso) {
 .lb-icon-btn:disabled { opacity: 0.3; cursor: default; }
 .lb-icon-btn.danger:hover:not(:disabled) { color: #ef5350; background: rgba(239,83,80,0.15); }
 
-/* Main area: nav + image + side panel */
+/* Main area: nav + media + side panel */
 .lb-main {
   flex: 1;
   display: flex;
@@ -236,6 +270,12 @@ function formatDate(iso) {
   transition: opacity 0.15s;
 }
 .lb-img.loading { opacity: 0; }
+.lb-video {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+.lb-video.loading { opacity: 0; }
 .lb-spinner {
   position: absolute;
   width: 36px;

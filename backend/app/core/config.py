@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     secret_key: str
     bootstrap_admin_email: str = ""
     max_upload_mb: int = 50
+    max_video_mb: int = 500
 
     class Config:
         env_file = ".env"

@@ -1,24 +1,34 @@
 import io
+import os
+import subprocess
+import tempfile
 import uuid
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile, status
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.core.auth import get_current_user
 from app.core.config import settings
-from app.core.database import get_db
+from app.core.database import SessionLocal, get_db
 from app.core.storage import delete_file, generate_presigned_download_url, generate_presigned_url, upload_file
 from app.models.models import Permission, Photo, User
 from app.api.albums import _get_user_role
 
 router = APIRouter(tags=["photos"])
 
-ALLOWED_TYPES = {
+ALLOWED_IMAGE_TYPES = {
     "image/jpeg", "image/jpg", "image/png", "image/gif",
     "image/webp", "image/heic", "image/heif",
 }
+
+ALLOWED_VIDEO_TYPES = {
+    "video/mp4", "video/quicktime", "video/webm",
+    "video/x-msvideo", "video/avi",
+}
+
+ALLOWED_TYPES = ALLOWED_IMAGE_TYPES | ALLOWED_VIDEO_TYPES
 
 
 def _check_photo_access(photo: Photo, current_user: User, db: Session):
@@ -79,11 +89,78 @@ def _make_thumbnail(img, max_px: int) -> bytes:
     return buf.getvalue()
 
 
+def _extract_video_thumbnail(raw_bytes: bytes, ext: str) -> bytes | None:
+    """Extract first frame of a video as JPEG bytes using ffmpeg. Returns None on failure."""
+    in_path = os.path.join(tempfile.gettempdir(), f"{uuid.uuid4().hex}.{ext}")
+    out_path = os.path.join(tempfile.gettempdir(), f"{uuid.uuid4().hex}.jpg")
+    try:
+        with open(in_path, "wb") as f:
+            f.write(raw_bytes)
+        result = subprocess.run(
+            ["ffmpeg", "-y", "-i", in_path, "-frames:v", "1", "-f", "image2", out_path],
+            capture_output=True,
+            timeout=60,
+        )
+        if result.returncode != 0 or not os.path.exists(out_path):
+            return None
+        with open(out_path, "rb") as f:
+            return f.read()
+    except Exception:
+        return None
+    finally:
+        for p in (in_path, out_path):
+            try:
+                os.remove(p)
+            except OSError:
+                pass
+
+
+def _process_video_background(photo_id: int, tmp_path: str, orig_key: str, prefix: str, orig_ext: str, mime: str):
+    """Upload video + generate thumbnails in background. Runs after HTTP response is sent."""
+    db = SessionLocal()
+    try:
+        with open(tmp_path, "rb") as f:
+            raw = f.read()
+
+        upload_file(orig_key, io.BytesIO(raw), mime)
+
+        frame_bytes = _extract_video_thumbnail(raw, orig_ext)
+        thumb_300_key = None
+        thumb_800_key = None
+        if frame_bytes:
+            try:
+                from PIL import Image
+                frame_img = Image.open(io.BytesIO(frame_bytes))
+                if frame_img.mode not in ("RGB", "RGBA", "L"):
+                    frame_img = frame_img.convert("RGB")
+                thumb_300_key = f"{prefix}/thumb_300.jpg"
+                thumb_800_key = f"{prefix}/thumb_800.jpg"
+                upload_file(thumb_300_key, io.BytesIO(_make_thumbnail(frame_img, 300)), "image/jpeg")
+                upload_file(thumb_800_key, io.BytesIO(_make_thumbnail(frame_img, 800)), "image/jpeg")
+            except Exception:
+                pass
+
+        photo = db.query(Photo).filter(Photo.id == photo_id).first()
+        if photo:
+            photo.thumb_300_key = thumb_300_key
+            photo.thumb_800_key = thumb_800_key
+            db.commit()
+    except Exception:
+        pass
+    finally:
+        db.close()
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
+
+
 @router.post("/albums/{album_id}/photos", status_code=status.HTTP_201_CREATED)
 async def upload_photo(
     album_id: int,
     file: UploadFile = File(...),
     caption: str = Form(default=""),
+    background_tasks: BackgroundTasks = ...,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -96,97 +173,153 @@ async def upload_photo(
     if role not in ("admin", "uploader"):
         raise HTTPException(status_code=403, detail="Upload permission required")
 
-    if file.content_type not in ALLOWED_TYPES:
-        raise HTTPException(status_code=400, detail=f"Unsupported file type: {file.content_type}")
+    mime = file.content_type or ""
+    if mime not in ALLOWED_TYPES:
+        raise HTTPException(status_code=400, detail=f"Unsupported file type: {mime}")
 
     raw = await file.read()
-    max_bytes = settings.max_upload_mb * 1024 * 1024
-    if len(raw) > max_bytes:
-        raise HTTPException(status_code=413, detail=f"File exceeds {settings.max_upload_mb} MB limit")
+    is_video = mime in ALLOWED_VIDEO_TYPES
 
-    # Open with Pillow
-    try:
-        from PIL import Image, ImageOps
-        img = Image.open(io.BytesIO(raw))
-        img.load()
-    except Exception:
+    if is_video:
+        max_bytes = settings.max_video_mb * 1024 * 1024
+        if len(raw) > max_bytes:
+            raise HTTPException(status_code=413, detail=f"File exceeds {settings.max_video_mb} MB limit")
+    else:
+        max_bytes = settings.max_upload_mb * 1024 * 1024
+        if len(raw) > max_bytes:
+            raise HTTPException(status_code=413, detail=f"File exceeds {settings.max_upload_mb} MB limit")
+
+    prefix = f"albums/{album_id}/{uuid.uuid4().hex}"
+    orig_ext = (file.filename or "file").rsplit(".", 1)[-1].lower()
+    orig_key = f"{prefix}/original.{orig_ext}"
+
+    if is_video:
+        # Save to temp file and process in background — responds immediately, bypassing proxy timeouts
+        tmp_path = os.path.join(tempfile.gettempdir(), f"{uuid.uuid4().hex}.{orig_ext}")
+        with open(tmp_path, "wb") as f:
+            f.write(raw)
+
+        photo = Photo(
+            album_id=album_id,
+            uploaded_by=current_user.id,
+            storage_key=orig_key,
+            thumb_300_key=None,
+            thumb_800_key=None,
+            mime_type=mime,
+            filename=file.filename or f"video.{orig_ext}",
+            file_size_bytes=len(raw),
+            caption=caption.strip() or None,
+        )
+        db.add(photo)
+
+        existing_perm = db.query(Permission).filter(
+            Permission.user_id == current_user.id,
+            Permission.album_id == album_id,
+        ).first()
+        if not existing_perm:
+            db.add(Permission(
+                user_id=current_user.id,
+                album_id=album_id,
+                role="uploader",
+                granted_by=current_user.id,
+            ))
+
+        db.commit()
+        db.refresh(photo)
+
+        background_tasks.add_task(
+            _process_video_background,
+            photo.id, tmp_path, orig_key, prefix, orig_ext, mime,
+        )
+
+        return {
+            "id": photo.id,
+            "thumb_300_url": None,
+            "thumb_800_url": None,
+            "mime_type": photo.mime_type,
+            "filename": photo.filename,
+            "caption": photo.caption,
+            "width": None,
+            "height": None,
+            "exif_date_taken": None,
+            "uploaded_at": photo.uploaded_at.isoformat(),
+        }
+    else:
+        # Image path — existing Pillow processing
         try:
-            import pillow_heif
-            pillow_heif.register_heif_opener()
             from PIL import Image, ImageOps
             img = Image.open(io.BytesIO(raw))
             img.load()
-        except Exception as e:
-            raise HTTPException(status_code=400, detail=f"Cannot open image: {e}")
+        except Exception:
+            try:
+                import pillow_heif
+                pillow_heif.register_heif_opener()
+                from PIL import Image, ImageOps
+                img = Image.open(io.BytesIO(raw))
+                img.load()
+            except Exception as e:
+                raise HTTPException(status_code=400, detail=f"Cannot open image: {e}")
 
-    exif = _extract_exif(img)
+        exif = _extract_exif(img)
+        img = ImageOps.exif_transpose(img)
+        width, height = img.size
 
-    # Apply EXIF orientation (fixes iPhone portrait photos rotated 90°)
-    img = ImageOps.exif_transpose(img)
+        if img.mode not in ("RGB", "RGBA", "L"):
+            img = img.convert("RGB")
 
-    width, height = img.size
+        thumb_300_bytes = _make_thumbnail(img, 300)
+        thumb_800_bytes = _make_thumbnail(img, 800)
 
-    # Convert to RGB for thumbnails if needed
-    if img.mode not in ("RGB", "RGBA", "L"):
-        img = img.convert("RGB")
+        thumb_300_key = f"{prefix}/thumb_300.jpg"
+        thumb_800_key = f"{prefix}/thumb_800.jpg"
+        upload_file(orig_key, io.BytesIO(raw), mime)
+        upload_file(thumb_300_key, io.BytesIO(thumb_300_bytes), "image/jpeg")
+        upload_file(thumb_800_key, io.BytesIO(thumb_800_bytes), "image/jpeg")
 
-    thumb_300_bytes = _make_thumbnail(img, 300)
-    thumb_800_bytes = _make_thumbnail(img, 800)
-
-    # Storage keys
-    prefix = f"albums/{album_id}/{uuid.uuid4().hex}"
-    orig_ext = (file.filename or "photo.jpg").rsplit(".", 1)[-1].lower()
-    orig_key = f"{prefix}/original.{orig_ext}"
-    thumb_300_key = f"{prefix}/thumb_300.jpg"
-    thumb_800_key = f"{prefix}/thumb_800.jpg"
-
-    content_type = file.content_type or "image/jpeg"
-    upload_file(orig_key, io.BytesIO(raw), content_type)
-    upload_file(thumb_300_key, io.BytesIO(thumb_300_bytes), "image/jpeg")
-    upload_file(thumb_800_key, io.BytesIO(thumb_800_bytes), "image/jpeg")
-
-    photo = Photo(
-        album_id=album_id,
-        uploaded_by=current_user.id,
-        storage_key=orig_key,
-        thumb_300_key=thumb_300_key,
-        thumb_800_key=thumb_800_key,
-        filename=file.filename or "photo.jpg",
-        file_size_bytes=len(raw),
-        width=width,
-        height=height,
-        caption=caption.strip() or None,
-        **exif,
-    )
-    db.add(photo)
-
-    # Grant uploader permission if not already present
-    existing_perm = db.query(Permission).filter(
-        Permission.user_id == current_user.id,
-        Permission.album_id == album_id,
-    ).first()
-    if not existing_perm:
-        db.add(Permission(
-            user_id=current_user.id,
+        photo = Photo(
             album_id=album_id,
-            role="uploader",
-            granted_by=current_user.id,
-        ))
+            uploaded_by=current_user.id,
+            storage_key=orig_key,
+            thumb_300_key=thumb_300_key,
+            thumb_800_key=thumb_800_key,
+            mime_type=mime,
+            filename=file.filename or "photo.jpg",
+            file_size_bytes=len(raw),
+            width=width,
+            height=height,
+            caption=caption.strip() or None,
+            **exif,
+        )
 
-    db.commit()
-    db.refresh(photo)
+        db.add(photo)
 
-    return {
-        "id": photo.id,
-        "thumb_300_url": generate_presigned_url(photo.thumb_300_key),
-        "thumb_800_url": generate_presigned_url(photo.thumb_800_key),
-        "filename": photo.filename,
-        "caption": photo.caption,
-        "width": photo.width,
-        "height": photo.height,
-        "exif_date_taken": photo.exif_date_taken.isoformat() if photo.exif_date_taken else None,
-        "uploaded_at": photo.uploaded_at.isoformat(),
-    }
+        existing_perm = db.query(Permission).filter(
+            Permission.user_id == current_user.id,
+            Permission.album_id == album_id,
+        ).first()
+        if not existing_perm:
+            db.add(Permission(
+                user_id=current_user.id,
+                album_id=album_id,
+                role="uploader",
+                granted_by=current_user.id,
+            ))
+
+        db.commit()
+        db.refresh(photo)
+
+        return {
+            "id": photo.id,
+            "thumb_300_url": generate_presigned_url(photo.thumb_300_key),
+            "thumb_800_url": generate_presigned_url(photo.thumb_800_key),
+            "mime_type": photo.mime_type,
+            "filename": photo.filename,
+            "caption": photo.caption,
+            "width": photo.width,
+            "height": photo.height,
+            "exif_date_taken": photo.exif_date_taken.isoformat() if photo.exif_date_taken else None,
+            "uploaded_at": photo.uploaded_at.isoformat(),
+        }
 
 
 @router.get("/photos/{photo_id}")
@@ -202,10 +335,11 @@ def get_photo(
         "id": photo.id,
         "album_id": photo.album_id,
         "filename": photo.filename,
+        "mime_type": photo.mime_type,
         "caption": photo.caption,
         "original_url": generate_presigned_url(photo.storage_key),
-        "thumb_300_url": generate_presigned_url(photo.thumb_300_key),
-        "thumb_800_url": generate_presigned_url(photo.thumb_800_key),
+        "thumb_300_url": generate_presigned_url(photo.thumb_300_key) if photo.thumb_300_key else None,
+        "thumb_800_url": generate_presigned_url(photo.thumb_800_key) if photo.thumb_800_key else None,
         "file_size_bytes": photo.file_size_bytes,
         "width": photo.width,
         "height": photo.height,

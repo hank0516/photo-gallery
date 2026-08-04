@@ -10,7 +10,7 @@
     <input
       ref="fileInput"
       type="file"
-      accept="image/*,.heic,.heif"
+      accept="image/*,.heic,.heif,video/mp4,video/quicktime,video/webm,video/x-msvideo,.mp4,.mov,.webm,.avi"
       multiple
       style="display:none"
       @change="onFileChange"
@@ -21,13 +21,21 @@
         <polyline points="17 8 12 3 7 8" />
         <line x1="12" y1="3" x2="12" y2="15" />
       </svg>
-      <p>拖放照片到此處，或點擊選擇</p>
-      <span class="hint-sub">支援 JPG / PNG / WebP / HEIC，最大 {{ maxMb }} MB</span>
+      <p>拖放照片或影片到此處，或點擊選擇</p>
+      <span class="hint-sub">
+        圖片：JPG / PNG / WebP / HEIC（最大 {{ maxMb }} MB）<br>
+        影片：MP4 / MOV / WebM / AVI（最大 500 MB）
+      </span>
     </div>
 
     <div v-else class="queue" @click.stop>
       <div v-for="item in queue" :key="item.id" class="queue-item">
-        <img :src="item.preview" class="q-thumb" />
+        <div v-if="isVideoFile(item.file)" class="q-thumb q-thumb-video">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M8 5v14l11-7z"/>
+          </svg>
+        </div>
+        <img v-else :src="item.preview" class="q-thumb" />
         <div class="q-info">
           <span class="q-name">{{ item.file.name }}</span>
           <span class="q-size">{{ formatSize(item.file.size) }}</span>
@@ -48,7 +56,7 @@
           :disabled="uploading || pendingCount === 0"
           @click="uploadAll"
         >
-          {{ uploading ? `上傳中… (${doneCount}/${queue.length})` : `上傳 ${pendingCount} 張` }}
+          {{ uploading ? `上傳中… (${doneCount}/${queue.length})` : `上傳 ${pendingCount} 個` }}
         </button>
       </div>
     </div>
@@ -73,12 +81,18 @@ const uploading = ref(false)
 const pendingCount = computed(() => queue.value.filter(i => i.status === 'pending').length)
 const doneCount = computed(() => queue.value.filter(i => i.status === 'done').length)
 
+function isVideoFile(file) {
+  return file.type.startsWith('video/') || /\.(mp4|mov|webm|avi)$/i.test(file.name)
+}
+
 function addFiles(files) {
   dragging.value = false
   for (const f of files) {
-    if (!f.type.startsWith('image/') && !f.name.match(/\.(heic|heif)$/i)) continue
+    const isImage = f.type.startsWith('image/') || /\.(heic|heif)$/i.test(f.name)
+    const isVideo = isVideoFile(f)
+    if (!isImage && !isVideo) continue
     const id = Math.random().toString(36).slice(2)
-    const preview = URL.createObjectURL(f)
+    const preview = isImage ? URL.createObjectURL(f) : null
     queue.value.push({ id, file: f, preview, status: 'pending', progress: 0, error: null })
   }
 }
@@ -88,7 +102,7 @@ function onFileChange(e) { addFiles(e.target.files); e.target.value = '' }
 
 function remove(id) {
   const item = queue.value.find(i => i.id === id)
-  if (item) URL.revokeObjectURL(item.preview)
+  if (item?.preview) URL.revokeObjectURL(item.preview)
   queue.value = queue.value.filter(i => i.id !== id)
 }
 
@@ -156,7 +170,7 @@ function statusLabel(item) {
   min-height: 100px;
 }
 .zone-hint p { margin: 0; font-size: 15px; }
-.hint-sub { font-size: 12px; color: #444; }
+.hint-sub { font-size: 12px; color: #444; line-height: 1.7; }
 .queue {
   display: flex;
   flex-direction: column;
@@ -176,6 +190,17 @@ function statusLabel(item) {
   object-fit: cover;
   border-radius: 4px;
   flex-shrink: 0;
+}
+.q-thumb-video {
+  width: 48px;
+  height: 48px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  background: #2a2a2a;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #5c6bc0;
 }
 .q-info {
   flex: 1;
