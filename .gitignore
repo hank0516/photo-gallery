@@ -3,7 +3,6 @@ backend/venv_photo_galary/
 backend/__pycache__/
 backend/**/__pycache__/
 backend/**/*.pyc
-backend/alembic/versions/
 
 # Environment
 **/.env
