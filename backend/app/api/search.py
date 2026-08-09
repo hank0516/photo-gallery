@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import or_
+from sqlalchemy import or_, case
 from typing import Optional
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 from app.core.auth import get_current_user
 from app.core.database import get_db
@@ -37,6 +37,9 @@ def search_photos(
             .filter(Permission.user_id == current_user.id).all()
         ]
 
+    if album_id is not None and album_id not in permitted_ids:
+        raise HTTPException(status_code=403, detail="Access denied")
+
     if not permitted_ids:
         return {"photos": [], "total": 0, "page": page, "per_page": per_page}
 
@@ -51,8 +54,6 @@ def search_photos(
     )
 
     if album_id is not None:
-        if album_id not in permitted_ids:
-            raise HTTPException(status_code=403, detail="Access denied")
         query = query.filter(Photo.album_id == album_id)
 
     if q:
@@ -70,10 +71,14 @@ def search_photos(
     if date_to:
         query = query.filter(
             Photo.exif_date_taken != None,
-            Photo.exif_date_taken < datetime(date_to.year, date_to.month, date_to.day + 1),
+            Photo.exif_date_taken < datetime(date_to.year, date_to.month, date_to.day) + timedelta(days=1),
         )
 
-    query = query.order_by(Photo.exif_date_taken.desc().nullslast(), Photo.uploaded_at.desc())
+    query = query.order_by(
+        case((Photo.exif_date_taken.is_(None), 1), else_=0),
+        Photo.exif_date_taken.desc(),
+        Photo.uploaded_at.desc(),
+    )
 
     total = query.count()
     rows = query.offset((page - 1) * per_page).limit(per_page).all()

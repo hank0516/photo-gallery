@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, case
 from typing import Optional
 import io
 import os
@@ -74,7 +74,7 @@ def list_albums(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    order = [func.isnull(Album.album_date), Album.album_date.desc(), Album.created_at.desc()]
+    order = [case((Album.album_date.is_(None), 1), else_=0), Album.album_date.desc(), Album.created_at.desc()]
 
     if current_user.is_admin:
         albums = db.query(Album).filter(Album.is_deleted == False).order_by(*order).all()
