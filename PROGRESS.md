@@ -1,6 +1,6 @@
 # Photo Gallery — 實作進度
 
-**最後更新**: 2026-08-04
+**最後更新**: 2026-08-09
 
 ---
 
@@ -17,7 +17,7 @@
 | Phase 6: US4 Albums | 建立/編輯/刪除相簿 | ✅ 完成 |
 | Phase 7: US5 Permissions | 相簿成員管理（新增/移除/改角色）| ✅ 完成 |
 | Phase 8: US6 EXIF | 照片詳情、拍攝時間、相機型號、GPS | ✅ 完成 |
-| Phase 9: US7 Share | 分享連結 | ⬜ 待實作 |
+| Phase 9: US7 Share | 分享連結（含影片）、public route 401 修正 | ✅ 完成 |
 | Phase 10: US8 Download | 單張下載（✅）、相簿 ZIP（⬜）| 🔶 部分完成 |
 | Phase 11: US9 Search | 搜尋與篩選 | ✅ 完成 |
 | Phase 12: Polish | systemd、Apache、RWD | ✅ 完成 |

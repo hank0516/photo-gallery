@@ -11,6 +11,9 @@
           <button v-if="isAdmin" class="btn-secondary" @click="showMembers = true">
             管理成員
           </button>
+          <button v-if="isAdmin" class="btn-secondary" @click="showShare = true">
+            分享
+          </button>
           <button v-if="isAdmin" class="btn-danger" @click="handleDeleteAlbum">
             刪除相簿
           </button>
@@ -91,6 +94,13 @@
       @close="showMembers = false"
     />
 
+    <!-- Share Modal -->
+    <ShareModal
+      v-if="showShare"
+      :albumId="albumId"
+      @close="showShare = false"
+    />
+
     <!-- Upload Modal -->
     <div v-if="showUpload" class="modal-overlay" @click.self="showUpload = false">
       <div class="modal" @click.stop>
@@ -115,6 +125,7 @@ import PhotoGrid from '@/components/PhotoGrid.vue'
 import Lightbox from '@/components/Lightbox.vue'
 import UploadZone from '@/components/UploadZone.vue'
 import MembersModal from '@/components/MembersModal.vue'
+import ShareModal from '@/components/ShareModal.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -132,6 +143,7 @@ const lightboxOpen = ref(false)
 const lightboxIndex = ref(0)
 const showUpload = ref(false)
 const showMembers = ref(false)
+const showShare = ref(false)
 
 // Lock gate
 const passwordInput = ref('')

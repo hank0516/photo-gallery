@@ -6,7 +6,7 @@
         <span class="lb-counter">{{ currentIndex + 1 }} / {{ photos.length }}</span>
         <div class="lb-topbar-actions">
           <button class="lb-icon-btn" @click="showInfo = !showInfo" title="詳情">ⓘ</button>
-          <a :href="`/api/photo-gallery/photos/${current?.id}/download`" target="_blank" class="lb-icon-btn" title="下載">↓</a>
+          <a v-if="showDownload" :href="`/api/photo-gallery/photos/${current?.id}/download`" target="_blank" class="lb-icon-btn" title="下載">↓</a>
           <button v-if="myRole === 'admin'" class="lb-icon-btn danger" :disabled="deleting" @click="deletePhoto" title="刪除">🗑</button>
           <button class="lb-icon-btn" @click="$emit('close')" title="關閉 (Esc)">✕</button>
         </div>
@@ -88,6 +88,7 @@ const props = defineProps({
   photos: { type: Array, default: () => [] },
   startIndex: { type: Number, default: 0 },
   myRole: { type: String, default: '' },
+  showDownload: { type: Boolean, default: true },
 })
 const emit = defineEmits(['close', 'update:startIndex', 'deleted'])
 
@@ -106,31 +107,44 @@ watch(current, async (photo) => {
   if (!photo) { displayUrl.value = ''; return }
 
   if (isVideo.value) {
-    // For videos: fetch original_url directly (presigned URL for the video file)
     mediaLoading.value = true
     displayUrl.value = ''
-    try {
-      const { data } = await api.get(`/photos/${photo.id}`)
-      if (current.value?.id === photo.id) {
-        displayUrl.value = data.original_url
+    if (photo.original_url) {
+      displayUrl.value = photo.original_url
+      mediaLoading.value = false
+    } else {
+      try {
+        const { data } = await api.get(`/photos/${photo.id}`)
+        if (current.value?.id === photo.id) {
+          displayUrl.value = data.original_url
+          mediaLoading.value = false
+        }
+      } catch {
         mediaLoading.value = false
       }
-    } catch {
-      mediaLoading.value = false
     }
   } else {
-    // For images: show thumb_800 immediately, then upgrade to original
     displayUrl.value = photo.thumb_800_url || ''
-    try {
-      const { data } = await api.get(`/photos/${photo.id}`)
-      const origUrl = data.original_url
+    if (photo.original_url) {
+      const origUrl = photo.original_url
       await new Promise((resolve) => {
         const img = new Image()
         img.onload = img.onerror = resolve
         img.src = origUrl
       })
       if (current.value?.id === photo.id) displayUrl.value = origUrl
-    } catch { /* keep thumb_800 */ }
+    } else {
+      try {
+        const { data } = await api.get(`/photos/${photo.id}`)
+        const origUrl = data.original_url
+        await new Promise((resolve) => {
+          const img = new Image()
+          img.onload = img.onerror = resolve
+          img.src = origUrl
+        })
+        if (current.value?.id === photo.id) displayUrl.value = origUrl
+      } catch { /* keep thumb_800 */ }
+    }
   }
 }, { immediate: true })
 
