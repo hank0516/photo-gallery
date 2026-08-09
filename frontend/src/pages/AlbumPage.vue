@@ -17,6 +17,11 @@
           <button v-if="isAdmin" class="btn-danger" @click="handleDeleteAlbum">
             刪除相簿
           </button>
+          <a
+            v-if="canUpload"
+            :href="`/api/photo-gallery/albums/${albumId}/download-zip`"
+            class="btn-secondary"
+          >下載相簿</a>
           <button v-if="canUpload" class="btn-primary" @click="showUpload = true">
             上傳照片
           </button>

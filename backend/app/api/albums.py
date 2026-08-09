@@ -1,14 +1,19 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from typing import Optional
+import io
+import os
 import re
+import zipfile
 from datetime import date
 
 from app.core.auth import get_current_user, require_admin
+from app.core.config import settings
 from app.core.database import get_db
 from app.core.security import create_unlock_token, decode_unlock_token, hash_password, verify_password
-from app.core.storage import generate_presigned_url
+from app.core.storage import generate_presigned_url, get_client
 from app.models.models import Album, Photo, Permission, User
 
 _DATE_RE = re.compile(r'(\d{4})[.\-](\d{2})[.\-](\d{2})')
@@ -327,3 +332,57 @@ def revoke_permission(
         Permission.user_id == user_id, Permission.album_id == album_id
     ).delete()
     db.commit()
+
+
+@router.get("/albums/{album_id}/download-zip")
+def download_album_zip(
+    album_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    album = db.query(Album).filter(Album.id == album_id, Album.is_deleted == False).first()
+    if not album:
+        raise HTTPException(status_code=404, detail="Album not found")
+
+    role = _get_user_role(db, current_user, album_id)
+    if role not in ("admin", "uploader"):
+        raise HTTPException(status_code=403, detail="Admin or uploader role required")
+
+    photos = (
+        db.query(Photo)
+        .filter(Photo.album_id == album_id, Photo.is_deleted == False)
+        .order_by(Photo.uploaded_at)
+        .all()
+    )
+
+    photo_data = [(p.storage_key, p.filename) for p in photos]
+
+    def generate_zip():
+        mem = io.BytesIO()
+        client = get_client()
+        with zipfile.ZipFile(mem, "w", zipfile.ZIP_DEFLATED, allowZip64=True) as zf:
+            seen: dict[str, int] = {}
+            for key, filename in photo_data:
+                name = filename
+                if name in seen:
+                    seen[name] += 1
+                    base, ext = os.path.splitext(name)
+                    name = f"{base}_{seen[name]}{ext}"
+                else:
+                    seen[name] = 0
+                buf = io.BytesIO()
+                client.download_fileobj(settings.linode_bucket, key, buf)
+                buf.seek(0)
+                zf.writestr(name, buf.read())
+        mem.seek(0)
+        yield from iter(lambda: mem.read(65536), b"")
+
+    from urllib.parse import quote
+    filename = f"{album.name}.zip"
+    encoded = quote(filename.encode("utf-8"))
+
+    return StreamingResponse(
+        generate_zip(),
+        media_type="application/zip",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{encoded}"},
+    )
