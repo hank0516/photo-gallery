@@ -44,3 +44,23 @@ def decode_unlock_token(token: str) -> Optional[dict]:
         return payload
     except JWTError:
         return None
+
+
+def create_share_unlock_token(album_id: int, share_token: str) -> str:
+    payload = {
+        "album_id": album_id,
+        "share_token": share_token,
+        "purpose": "share_unlock",
+        "exp": datetime.utcnow() + timedelta(hours=24),
+    }
+    return jwt.encode(payload, settings.secret_key, algorithm=_ALGORITHM)
+
+
+def decode_share_unlock_token(token: str) -> Optional[dict]:
+    try:
+        payload = jwt.decode(token, settings.secret_key, algorithms=[_ALGORITHM])
+        if payload.get("purpose") != "share_unlock":
+            return None
+        return payload
+    except JWTError:
+        return None
