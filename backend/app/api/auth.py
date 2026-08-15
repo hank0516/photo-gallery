@@ -24,7 +24,9 @@ oauth.register(
 
 
 @router.get("/auth/login")
-async def login(request: Request):
+async def login(request: Request, redirect: str = "web"):
+    # Store native redirect intent in session so callback can read it
+    request.session["native_redirect"] = (redirect == "native")
     return await oauth.google.authorize_redirect(request, settings.google_redirect_uri)
 
 
@@ -59,6 +61,9 @@ async def callback(request: Request, db: Session = Depends(get_db)):
     db.refresh(user)
 
     access_token = create_access_token({"user_id": user.id, "email": user.email, "is_admin": user.is_admin})
+
+    if request.session.pop("native_redirect", False):
+        return RedirectResponse(url=f"photogallery://auth/callback?token={access_token}")
 
     response = RedirectResponse(url="/sites/photo-gallery/")
     response.set_cookie(

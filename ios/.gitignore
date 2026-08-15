@@ -1,0 +1,8 @@
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
+*.xcworkspace/xcshareddata/swiftpm/
+DerivedData/
+.build/
+*.ipa
+*.dSYM.zip
+*.dSYM
