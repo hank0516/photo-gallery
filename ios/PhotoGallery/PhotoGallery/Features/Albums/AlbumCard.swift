@@ -6,22 +6,22 @@ struct AlbumCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            ZStack(alignment: .topTrailing) {
-                KFImage(source: album.coverThumbURL.map { ImageCache.source(for: $0) })
-                    .placeholder { Color.secondary.opacity(0.2) }
-                    .resizable()
-                    .scaledToFill()
-                    .frame(height: 140)
-                    .clipped()
-                    .cornerRadius(10)
-
-                if album.isLocked {
-                    Image(systemName: "lock.fill")
-                        .padding(6)
-                        .background(.ultraThinMaterial, in: Circle())
-                        .padding(8)
+            Color.secondary.opacity(0.15)
+                .frame(maxWidth: .infinity, minHeight: 140, maxHeight: 140)
+                .overlay(
+                    KFImage(source: album.coverThumbURL.map { ImageCache.source(for: $0) })
+                        .resizable()
+                        .scaledToFill()
+                )
+                .overlay(alignment: .topTrailing) {
+                    if album.isLocked {
+                        Image(systemName: "lock.fill")
+                            .padding(6)
+                            .background(.ultraThinMaterial, in: Circle())
+                            .padding(8)
+                    }
                 }
-            }
+                .clipShape(RoundedRectangle(cornerRadius: 10))
 
             Text(album.name)
                 .font(.subheadline.weight(.semibold))

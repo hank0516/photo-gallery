@@ -26,6 +26,8 @@ struct AlbumDetailView: View {
                     }, onLoadMore: {
                         await vm.loadNextPage()
                     })
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 16)
                 }
                 .refreshable {
                     vm.reset()

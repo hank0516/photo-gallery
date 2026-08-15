@@ -4,7 +4,7 @@ struct AlbumListView: View {
     @Environment(AppState.self) private var appState
     @State private var vm = AlbumListViewModel()
 
-    private let columns = [GridItem(.adaptive(minimum: 160), spacing: 12)]
+    private let columns = [GridItem(.adaptive(minimum: 160), spacing: 14)]
 
     var body: some View {
         NavigationStack {
@@ -36,7 +36,8 @@ struct AlbumListView: View {
                         .buttonStyle(.plain)
                 }
             }
-            .padding()
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
         }
         .refreshable { await vm.load() }
     }
