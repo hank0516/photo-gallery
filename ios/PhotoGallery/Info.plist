@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>tw.hansu.photogallery</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>photogallery</string>
+			</array>
+		</dict>
+	</array>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Photo Gallery needs access to save photos to your library.</string>
+</dict>
+</plist>

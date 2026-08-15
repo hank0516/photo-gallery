@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 from typing import Optional
 
-from fastapi import Cookie, Depends, HTTPException, status
+from fastapi import Cookie, Depends, HTTPException, Request, status
 from jose import JWTError, jwt
 from sqlalchemy.orm import Session
 
@@ -26,14 +26,26 @@ def decode_access_token(token: str) -> Optional[dict]:
         return None
 
 
+def _extract_token(request: Request, pg_session: Optional[str]) -> Optional[str]:
+    # Cookie takes precedence (web frontend); Bearer header used by native app
+    if pg_session:
+        return pg_session
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        return auth_header[7:]
+    return None
+
+
 def get_current_user(
+    request: Request,
     pg_session: Optional[str] = Cookie(default=None),
     db: Session = Depends(get_db),
 ) -> User:
-    if not pg_session:
+    token = _extract_token(request, pg_session)
+    if not token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
 
-    payload = decode_access_token(pg_session)
+    payload = decode_access_token(token)
     if not payload:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired session")
 
