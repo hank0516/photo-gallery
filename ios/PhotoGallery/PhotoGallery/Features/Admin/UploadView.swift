@@ -1,5 +1,13 @@
 import PhotosUI
 import SwiftUI
+import UniformTypeIdentifiers
+
+struct VideoFile: Transferable {
+    let url: URL
+    static var transferRepresentation: some TransferRepresentation {
+        FileRepresentation(contentType: .movie) { VideoFile(url: $0.url) }
+    }
+}
 
 struct UploadView: View {
     let albumId: Int
@@ -13,8 +21,29 @@ struct UploadView: View {
     struct UploadItem: Identifiable {
         let id = UUID()
         let item: PhotosPickerItem
+        let isVideo: Bool
+        let ext: String      // e.g. "JPG", "MP4"
+        var fileSize: Int64 = 0
         var status: Status = .pending
+
         enum Status { case pending, uploading, done, failed(String) }
+
+        var displayName: String { "\(isVideo ? "影片" : "照片")  .\(ext.lowercased())" }
+
+        var fileSizeString: String {
+            guard fileSize > 0 else { return "" }
+            return String(format: "%.1f MB", Double(fileSize) / 1_048_576)
+        }
+    }
+
+    private var pendingCount: Int {
+        uploadQueue.filter { if case .pending = $0.status { return true }; return false }.count
+    }
+
+    private var allDone: Bool {
+        !uploadQueue.isEmpty && uploadQueue.allSatisfy {
+            if case .done = $0.status { return true }; return false
+        }
     }
 
     var body: some View {
@@ -31,94 +60,109 @@ struct UploadView: View {
 
                 if !uploadQueue.isEmpty {
                     List(uploadQueue) { item in
-                        HStack {
-                            switch item.status {
-                            case .pending:   Image(systemName: "circle").foregroundStyle(.secondary)
-                            case .uploading: ProgressView().scaleEffect(0.8)
-                            case .done:      Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
-                            case .failed(let e):
-                                Image(systemName: "xmark.circle.fill").foregroundStyle(.red)
-                                Text(e).font(.caption).foregroundStyle(.red)
+                        HStack(spacing: 10) {
+                            Group {
+                                switch item.status {
+                                case .pending:
+                                    Image(systemName: "circle").foregroundStyle(.secondary)
+                                case .uploading:
+                                    ProgressView().scaleEffect(0.8)
+                                case .done:
+                                    Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                                case .failed:
+                                    Image(systemName: "xmark.circle.fill").foregroundStyle(.red)
+                                }
                             }
-                            Text(item.item.itemIdentifier ?? "Photo").font(.caption).foregroundStyle(.secondary)
+                            .frame(width: 22)
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(item.displayName).font(.subheadline)
+                                HStack(spacing: 8) {
+                                    if !item.fileSizeString.isEmpty {
+                                        Text(item.fileSizeString).font(.caption).foregroundStyle(.secondary)
+                                    }
+                                    if case .failed(let e) = item.status {
+                                        Text(e).font(.caption).foregroundStyle(.red).lineLimit(2)
+                                    }
+                                }
+                            }
                         }
                     }
                 }
 
                 Spacer()
 
-                if !uploadQueue.isEmpty && !isUploading {
-                    Button {
-                        Task { await startUpload() }
-                    } label: {
-                        Text("上傳 \(uploadQueue.filter { if case .pending = $0.status { return true }; return false }.count) 個項目")
-                            .frame(maxWidth: .infinity)
+                Group {
+                    if allDone {
+                        Button("完成") { onUploaded(); dismiss() }
+                            .buttonStyle(.borderedProminent)
+                    } else if !uploadQueue.isEmpty && !isUploading && pendingCount > 0 {
+                        Button { Task { await startUpload() } } label: {
+                            Text("上傳 \(pendingCount) 個項目").frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .padding(.horizontal)
                 }
+                .padding(.horizontal)
             }
             .padding(.top)
             .navigationTitle("上傳")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("關閉") {
-                        if !isUploading { dismiss() }
-                    }
+                    Button("關閉") { if !isUploading { dismiss() } }
                 }
             }
             .onChange(of: selectedItems) { _, newItems in
-                uploadQueue = newItems.map { UploadItem(item: $0) }
+                uploadQueue = newItems.map { pickerItem in
+                    let types = pickerItem.supportedContentTypes
+                    let isVideo = types.contains { $0.conforms(to: .movie) || $0.conforms(to: .video) || $0.conforms(to: .audiovisualContent) }
+                    let ext = (types.first?.preferredFilenameExtension ?? (isVideo ? "mp4" : "jpg")).uppercased()
+                    return UploadItem(item: pickerItem, isVideo: isVideo, ext: ext)
+                }
             }
         }
     }
 
     private func startUpload() async {
         isUploading = true
+        defer { isUploading = false }
+
         for i in uploadQueue.indices {
             guard case .pending = uploadQueue[i].status else { continue }
             uploadQueue[i].status = .uploading
 
             do {
                 let pickerItem = uploadQueue[i].item
-                // Load data from Photos
-                guard let data = try await pickerItem.loadTransferable(type: Data.self) else {
-                    uploadQueue[i].status = .failed("無法讀取檔案")
-                    continue
-                }
-                let mimeType: String
-                let filename: String
-                if let type = pickerItem.supportedContentTypes.first {
-                    if type.conforms(to: .movie) || type.conforms(to: .video) {
-                        mimeType = "video/mp4"
-                        filename = "video.mp4"
-                    } else {
-                        mimeType = "image/jpeg"
-                        filename = "photo.jpg"
-                    }
-                } else {
-                    mimeType = "image/jpeg"
-                    filename = "photo.jpg"
-                }
+                let isVideo = uploadQueue[i].isVideo
+                let rawExt = (pickerItem.supportedContentTypes.first?.preferredFilenameExtension ?? (isVideo ? "mp4" : "jpg")).lowercased()
 
-                _ = try await APIClient.shared.uploadPhoto(
-                    albumId: albumId,
-                    imageData: data,
-                    mimeType: mimeType,
-                    filename: filename)
+                if isVideo {
+                    guard let videoFile = try? await pickerItem.loadTransferable(type: VideoFile.self) else {
+                        uploadQueue[i].status = .failed("無法讀取影片")
+                        continue
+                    }
+                    let data = try Data(contentsOf: videoFile.url)
+                    uploadQueue[i].fileSize = Int64(data.count)
+                    let mime = rawExt == "mov" ? "video/quicktime" : "video/mp4"
+                    _ = try await APIClient.shared.uploadPhoto(
+                        albumId: albumId, imageData: data,
+                        mimeType: mime, filename: "video.\(rawExt)")
+                } else {
+                    guard let data = try? await pickerItem.loadTransferable(type: Data.self) else {
+                        uploadQueue[i].status = .failed("無法讀取照片")
+                        continue
+                    }
+                    uploadQueue[i].fileSize = Int64(data.count)
+                    _ = try await APIClient.shared.uploadPhoto(
+                        albumId: albumId, imageData: data,
+                        mimeType: "image/jpeg", filename: "photo.\(rawExt)")
+                }
                 uploadQueue[i].status = .done
             } catch {
                 uploadQueue[i].status = .failed(error.localizedDescription)
             }
         }
         isUploading = false
-        let allDone = uploadQueue.allSatisfy {
-            if case .done = $0.status { return true }; return false
-        }
-        if allDone {
-            onUploaded()
-            dismiss()
-        }
     }
 }

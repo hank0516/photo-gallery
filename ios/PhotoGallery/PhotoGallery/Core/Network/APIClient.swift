@@ -27,6 +27,13 @@ final class APIClient {
 
     var onUnauthorized: (() -> Void)?
 
+    private static let uploadSession: URLSession = {
+        let cfg = URLSessionConfiguration.default
+        cfg.timeoutIntervalForRequest = 300   // 5 min per request
+        cfg.timeoutIntervalForResource = 600  // 10 min total
+        return URLSession(configuration: cfg)
+    }()
+
     private init() {}
 
     // MARK: - Generic fetch
@@ -144,7 +151,7 @@ final class APIClient {
         body.append("--\(boundary)--\r\n".data(using: .utf8)!)
         request.httpBody = body
 
-        let (data, response) = try await session.data(for: request)
+        let (data, response) = try await APIClient.uploadSession.data(for: request)
         if let http = response as? HTTPURLResponse {
             if http.statusCode == 401 { onUnauthorized?(); throw APIError.unauthorized }
             guard (200..<300).contains(http.statusCode) else {
