@@ -1,3 +1,4 @@
+import AVFoundation
 import AVKit
 import SwiftUI
 
@@ -34,6 +35,10 @@ struct VideoPlayerView: View {
         isLoading = true
         defer { isLoading = false }
         do {
+            // Allow audio to play even when silent switch is on
+            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
+            try AVAudioSession.sharedInstance().setActive(true)
+
             let detail: PhotoDetail = try await APIClient.shared.fetch(Endpoints.photo(itemId))
             let p = AVPlayer(url: detail.originalURL)
             player = p
