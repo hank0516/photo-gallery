@@ -63,7 +63,12 @@ class RequestLoggingMiddleware:
             request = Request(scope)
 
             user_id, email = None, None
+            # Cookie（web）優先，其次 Bearer header（native app）
             token = request.cookies.get("pg_session")
+            if not token:
+                auth_header = request.headers.get("authorization", "")
+                if auth_header.startswith("Bearer "):
+                    token = auth_header[7:]
             if token:
                 payload = decode_access_token(token)
                 if payload:
