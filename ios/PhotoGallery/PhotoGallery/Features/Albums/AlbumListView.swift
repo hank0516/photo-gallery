@@ -3,6 +3,7 @@ import SwiftUI
 struct AlbumListView: View {
     @Environment(AppState.self) private var appState
     @State private var vm = AlbumListViewModel()
+    @State private var showCreateAlbum = false
 
     private let columns = [GridItem(.adaptive(minimum: 160), spacing: 14)]
 
@@ -10,10 +11,31 @@ struct AlbumListView: View {
         NavigationStack {
             content
                 .navigationTitle("Albums")
-                .toolbar { signOutButton }
+                .toolbar {
+                    if appState.session?.isAdmin == true {
+                        ToolbarItem(placement: .topBarLeading) {
+                            Button { showCreateAlbum = true } label: {
+                                Image(systemName: "plus")
+                            }
+                        }
+                    }
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Sign Out", role: .destructive) {
+                            Task {
+                                await AuthService.shared.signOut()
+                                appState.signOut()
+                            }
+                        }
+                    }
+                }
                 .navigationDestination(for: Album.self) { AlbumDetailView(album: $0) }
         }
         .task { await vm.load() }
+        .sheet(isPresented: $showCreateAlbum) {
+            CreateAlbumView { newAlbum in
+                vm.albums.insert(newAlbum, at: 0)
+            }
+        }
     }
 
     @ViewBuilder
@@ -40,16 +62,5 @@ struct AlbumListView: View {
             .padding(.vertical, 12)
         }
         .refreshable { await vm.load() }
-    }
-
-    private var signOutButton: some ToolbarContent {
-        ToolbarItem(placement: .topBarTrailing) {
-            Button("Sign Out", role: .destructive) {
-                Task {
-                    await AuthService.shared.signOut()
-                    appState.signOut()
-                }
-            }
-        }
     }
 }
