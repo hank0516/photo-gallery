@@ -3,14 +3,22 @@ import SwiftUI
 
 struct PhotoView: View {
     let photo: AlbumPhoto
-    @State private var displayURL: URL?
+    @State private var originalURL: URL?
     @State private var scale: CGFloat = 1
-    @State private var offset: CGSize = .zero
+    @State private var offset: CGSize = .zero   
     @State private var lastScale: CGFloat = 1
 
+    private var thumbURL: URL? { photo.thumb800URL ?? photo.thumb300URL }
+
     var body: some View {
-        KFImage(source: displayURL.map { ImageCache.source(for: $0) })
-            .placeholder { Color.black }
+        KFImage(source: (originalURL ?? thumbURL).map { ImageCache.source(for: $0) })
+            .placeholder {
+                // Keep showing thumb while original downloads
+                KFImage(source: thumbURL.map { ImageCache.source(for: $0) })
+                    .resizable()
+                    .scaledToFit()
+            }
+            .fade(duration: 0.25)
             .resizable()
             .scaledToFit()
             .scaleEffect(scale)
@@ -18,8 +26,7 @@ struct PhotoView: View {
             .gesture(magnifyGesture)
             .simultaneousGesture(dragGesture)
             .onTapGesture(count: 2) { resetZoom() }
-            .animation(.spring(duration: 0.3), value: scale)
-            .task { await loadProgressive() }
+            .task(id: photo.id) { await loadOriginal() }
     }
 
     private var magnifyGesture: some Gesture {
@@ -41,22 +48,10 @@ struct PhotoView: View {
         scale = 1; lastScale = 1; offset = .zero
     }
 
-    private func loadProgressive() async {
-        // Step 1: show thumb_800 immediately (likely already cached)
-        displayURL = photo.thumb800URL ?? photo.thumb300URL
-
-        // Step 2: fetch original_url from /photos/{id}
+    private func loadOriginal() async {
         guard let detail = try? await APIClient.shared.fetch(
             Endpoints.photo(photo.id)) as PhotoDetail
         else { return }
-
-        // Step 3: pre-load original into cache, then swap
-        let source = ImageCache.source(for: detail.originalURL)
-        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-            KingfisherManager.shared.retrieveImage(with: source) { _ in
-                continuation.resume()
-            }
-        }
-        displayURL = detail.originalURL
+        originalURL = detail.originalURL
     }
 }

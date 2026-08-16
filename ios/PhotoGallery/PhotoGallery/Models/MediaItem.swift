@@ -5,7 +5,7 @@ struct PhotoDetail: Decodable {
     let id: Int
     let albumId: Int
     let filename: String
-    let mimeType: String
+    let mimeType: String?
     let caption: String?
     let originalURL: URL
     let thumb300URL: URL?
@@ -19,7 +19,7 @@ struct PhotoDetail: Decodable {
     let exifGpsLon: Double?       // actual field: exif_gps_lon
     let uploadedAt: String
 
-    var isVideo: Bool { mimeType.hasPrefix("video/") }
+    var isVideo: Bool { mimeType?.hasPrefix("video/") ?? false }
 
     enum CodingKeys: String, CodingKey {
         case id, filename, caption, width, height
