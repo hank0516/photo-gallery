@@ -25,6 +25,7 @@
 | Phase 15: Locked Albums | 相簿加密、PBKDF2 hash、unlock JWT token、lock gate UI、spec 更新 | ✅ 完成 |
 | Phase 16: Delete Album UI + Query String Log | 刪除相簿按鈕（AlbumPage admin）、request log 加 query string | ✅ 完成 |
 | Phase 17: Video Support | 影片上傳（MP4/MOV/WebM/AVI）、ffmpeg 縮圖、Lightbox 播放、Grid play icon、搜尋包含影片 | ✅ 完成 |
+| Phase 18: Chunked Upload（重建） | 大檔（≥90MB）分段上傳繞過 Cloudflare 100MB 限制：後端 S3 multipart `upload/start\|part\|complete`、背景下載+縮圖；前端 45MB 切塊 | ✅ 完成 |
 
 ---
 
@@ -88,6 +89,13 @@
 | 成員列表空白 | `users.py` 用了 `u.picture`，model 欄位是 `avatar_url` | 修正欄位名 |
 | 頁面靠左不置中（Safari） | `#app` 未明確設 `width: 100%`，Safari 下 `margin: 0 auto` 失效 | App.vue 拆開 `#app` 規則並加 `width: 100%` |
 | `/sites/photo-gallery`（無 slash）404 | Apache `Alias` 只配對帶 `/` 的路徑 | 加 `RedirectMatch ^/sites/photo-gallery$ /sites/photo-gallery/` |
+| 網頁版上傳大 mov 失敗（`POST .../upload/start` → 404） | 分段上傳的**後端程式碼當初沒 commit，後來被覆蓋/`git reset` 遺失**（git 全歷史、stash、.pyc、備份都找不到；旁證：孤兒 migration `5dc04e6eeda5_add_video_rotation` 的 .py 不見了但 DB 欄位還在）。線上舊 `dist`（8/9 build）仍呼叫那三支已消失的 endpoint → 404；source 後來改回直接 `POST /photos`，但 dist 沒重 build | **重新實作分段上傳**（見 Phase 18）；用 request_logs 的 404 定位、再用 8/9 的 200/201 log 證明它曾經可用 |
+
+### 上傳架構限制（重要）
+
+- **Cloudflare 單次請求上限 100MB**：`cloud.hansu.tw` 走 Cloudflare 免費方案，任何 >100MB 的 request body 會在 edge 被回 413，**不會到達 origin**（FastAPI/Apache 都不會有 log）。大檔上傳必須切成 <100MB 的分段。
+- **presigned 直傳不可行**：Linode Object Storage 的 `jp-tyo-1` 叢集**不支援設定 bucket CORS**（`PutBucketCors` → 501 NotImplemented），而跨來源 PUT 一定觸發 CORS preflight，所以瀏覽器直傳 Linode 行不通。這就是為什麼採用「分段走 API」而非 presigned。
+- **分段上傳流程**：前端 45MB 切塊 → `upload/start`（開 S3 multipart）→ `upload/part`×N（每塊回 ETag）→ `upload/complete`（S3 組檔 + 背景縮圖）。縮圖/EXIF 在背景從 Linode 下載原檔後處理，故大檔上傳完成後縮圖會「晚一點」才出現。
 
 ### RWD 調整
 
@@ -130,5 +138,6 @@ sudo journalctl -u photo-gallery-api -f
 sudo systemctl restart photo-gallery-api
 
 # 重新 build 前端（改 Vue 後，立刻生效）
+# ⚠️ Apache serve 的是 dist/，改完 source 一定要 build，否則線上跑的還是舊版
 cd /home/hank/my_websites/photo-gallery/frontend && npm run build
 ```

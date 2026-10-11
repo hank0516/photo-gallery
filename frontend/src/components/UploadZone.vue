@@ -67,6 +67,23 @@
 import { ref, computed } from 'vue'
 import api from '@/services/api'
 
+// Files >= this are uploaded in parts (chunked) so each request stays under Cloudflare's
+// 100 MB body limit. Smaller files use the single-request direct POST.
+const CHUNK_THRESHOLD = 90 * 1024 * 1024
+const CHUNK_SIZE = 45 * 1024 * 1024  // per-part size; must be < 100 MB and (except last) >= 5 MB
+
+const MIME_BY_EXT = {
+  mov: 'video/quicktime', mp4: 'video/mp4', webm: 'video/webm', avi: 'video/x-msvideo',
+  heic: 'image/heic', heif: 'image/heif', jpg: 'image/jpeg', jpeg: 'image/jpeg',
+  png: 'image/png', gif: 'image/gif', webp: 'image/webp',
+}
+
+function fileMime(file) {
+  if (file.type) return file.type
+  const ext = file.name.split('.').pop().toLowerCase()
+  return MIME_BY_EXT[ext] || ''
+}
+
 const props = defineProps({
   albumId: { type: Number, required: true },
   maxMb: { type: Number, default: 50 },
@@ -106,6 +123,59 @@ function remove(id) {
   queue.value = queue.value.filter(i => i.id !== id)
 }
 
+async function uploadDirect(item) {
+  const form = new FormData()
+  form.append('file', item.file)
+  const { data } = await api.post(`/albums/${props.albumId}/photos`, form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    onUploadProgress: e => {
+      item.progress = Math.round((e.loaded / e.total) * 100)
+    },
+  })
+  return data
+}
+
+async function uploadChunked(item) {
+  const mime = fileMime(item.file)
+  const { data: start } = await api.post(`/albums/${props.albumId}/photos/upload/start`, {
+    filename: item.file.name,
+    mime_type: mime,
+    file_size: item.file.size,
+  })
+
+  const totalParts = Math.ceil(item.file.size / CHUNK_SIZE)
+  const parts = []
+  for (let i = 0; i < totalParts; i++) {
+    const partNumber = i + 1
+    const blob = item.file.slice(i * CHUNK_SIZE, Math.min((i + 1) * CHUNK_SIZE, item.file.size))
+    const form = new FormData()
+    form.append('storage_key', start.storage_key)
+    form.append('upload_id', start.upload_id)
+    form.append('part_number', partNumber)
+    form.append('chunk', blob)
+    const { data: part } = await api.post(`/albums/${props.albumId}/photos/upload/part`, form, {
+      onUploadProgress: e => {
+        const within = e.total ? e.loaded / e.total : 0
+        item.progress = Math.round(((i + within) / totalParts) * 97)
+      },
+    })
+    parts.push({ part_number: part.part_number, etag: part.etag })
+  }
+
+  item.progress = 98
+  const { data } = await api.post(`/albums/${props.albumId}/photos/upload/complete`, {
+    storage_key: start.storage_key,
+    prefix: start.prefix,
+    upload_id: start.upload_id,
+    filename: item.file.name,
+    mime_type: mime,
+    file_size: item.file.size,
+    caption: '',
+    parts,
+  })
+  return data
+}
+
 async function uploadAll() {
   uploading.value = true
   const pending = queue.value.filter(i => i.status === 'pending')
@@ -113,14 +183,9 @@ async function uploadAll() {
     item.status = 'uploading'
     item.progress = 0
     try {
-      const form = new FormData()
-      form.append('file', item.file)
-      const { data } = await api.post(`/albums/${props.albumId}/photos`, form, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-        onUploadProgress: e => {
-          item.progress = Math.round((e.loaded / e.total) * 100)
-        },
-      })
+      const data = item.file.size >= CHUNK_THRESHOLD
+        ? await uploadChunked(item)
+        : await uploadDirect(item)
       item.status = 'done'
       item.progress = 100
       emit('uploaded', data)
